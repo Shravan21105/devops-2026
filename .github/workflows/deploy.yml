@@ -19,15 +19,9 @@ jobs:
         distribution: 'temurin'
         java-version: '21'
 
-    # Fix mvnw permission
-    - name: Give permission
-      run: chmod +x mvnw
-
-    # Build JAR
     - name: Build JAR
       run: ./mvnw clean package
 
-    # Copy JAR to EC2
     - name: Copy JAR to EC2
       uses: appleboy/scp-action@v0.1.4
       with:
@@ -37,7 +31,6 @@ jobs:
         source: "target/*.jar"
         target: "/home/ec2-user/"
 
-    # Run JAR on EC2
     - name: Run JAR on EC2
       uses: appleboy/ssh-action@v0.1.10
       with:
@@ -47,5 +40,5 @@ jobs:
         script: |
           pkill -f jar || true
           cd /home/ec2-user
-          JAR_FILE=$(ls *.jar | head -n 1)
-          java -jar $JAR_FILE &
+          JAR=$(ls *.jar | head -n 1)
+          nohup java -jar $JAR > app.log 2>&1 &
