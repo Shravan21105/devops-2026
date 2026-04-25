@@ -22,7 +22,7 @@ jobs:
     - name: Build JAR
       run: ./mvnw clean package
 
-    # ✅ Copy JAR to EC2
+    # Copy JAR
     - name: Copy JAR to EC2
       uses: appleboy/scp-action@v0.1.4
       with:
@@ -32,7 +32,7 @@ jobs:
         source: "target/devops-0.0.1-SNAPSHOT.jar"
         target: "/home/ec2-user/"
 
-    # ✅ Run JAR on EC2
+    # Run JAR (FIXED)
     - name: Run JAR on EC2
       uses: appleboy/ssh-action@v0.1.10
       with:
@@ -40,6 +40,20 @@ jobs:
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_KEY }}
         script: |
-          pkill -f jar || true
+          set -e
           cd /home/ec2-user
+
+          # kill old
+          pkill -f devops-0.0.1-SNAPSHOT.jar || true
+
+          # ensure jar exists
+          ls -lt
+
+          # run new
           nohup java -jar devops-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
+
+          # wait so process doesn't die with SSH session
+          sleep 5
+
+          # verify
+          ps -ef | grep java
