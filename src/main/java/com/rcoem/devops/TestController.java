@@ -8,6 +8,7 @@ public class TestController {
 
     @GetMapping("/")
     public String home() {
-        return "AUTO DEPLOY SUCCESS 🚀";
+        return "AUTO DEPLOY SUCCESS AGAIN 🥳🚀\n";
+
     }
 }
