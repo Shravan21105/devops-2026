@@ -1,4 +1,4 @@
-name: Java CI/CD
+name: Java CI/CD Pipeline
 
 on:
   push:
@@ -10,30 +10,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+
+    # Step 1: Checkout source code from GitHub repository
+    - name: Checkout Repository
       uses: actions/checkout@v3
 
+    # Step 2: Setup Java environment (JDK 21)
     - name: Setup Java
       uses: actions/setup-java@v3
       with:
         distribution: 'temurin'
         java-version: '21'
 
-    - name: Build JAR
+    # Step 3: Build the application using Maven Wrapper
+    - name: Build Application (Generate JAR)
       run: ./mvnw clean package
 
-    # Copy JAR
-    - name: Copy JAR to EC2
+    # Step 4: Archive the generated artifact (JAR file)
+    - name: Archive Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: devops-jar
+        path: target/devops-0.0.1-SNAPSHOT.jar
+
+    # Step 5: Transfer the JAR file to EC2 instance via SCP (SSH)
+    - name: Upload JAR to EC2
       uses: appleboy/scp-action@v0.1.4
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_KEY }}
         source: "target/devops-0.0.1-SNAPSHOT.jar"
-        target: "/home/ec2-user/"
+        target: "/home/ec2-user/target/"
 
-    # Run JAR (FIXED)
-    - name: Run JAR on EC2
+    # Step 6: Connect to EC2 via SSH and start the application
+    - name: Deploy and Run Application on EC2
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.EC2_HOST }}
@@ -41,23 +52,30 @@ jobs:
         key: ${{ secrets.EC2_KEY }}
         script: |
           set -e
+
+          # Navigate to directory where JAR is uploaded
           cd /home/ec2-user/target
 
-          # kill old
+          # Stop any existing running instance of the application
           pkill -f devops-0.0.1-SNAPSHOT.jar || true
 
-          # ensure jar exists
+          # Display files to confirm JAR presence
+          echo "Listing files in target directory:"
           ls -lt
 
-          # run new
+          # Start the application in background using nohup
+          echo "Starting Spring Boot application..."
           nohup java -jar devops-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
 
-          # wait so process doesn't die with SSH session
-          sleep 5
+          # Wait for application to initialize
+          sleep 10
 
-          # verify
+          # Verify that the application process is running
+          echo "Verifying running process:"
           ps -ef | grep java | grep -v grep
 
-          # check if app is running
+          # Perform a health check on the application
+          echo "Performing health check..."
           curl -f http://localhost:8080 || exit 1
-          
+
+          echo "Deployment completed successfully."
