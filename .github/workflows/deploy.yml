@@ -10,35 +10,52 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      # 1. Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Setup Java
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'temurin'
-        java-version: '21'
+      # 2. Setup Java
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '21'
 
-    - name: Build JAR
-      run: ./mvnw clean package
+      # 3. Build JAR
+      - name: Build JAR
+        run: ./mvnw clean package
 
-    - name: Copy JAR to EC2
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_KEY }}
-        source: "target/*.jar"
-        target: "/home/ec2-user/"
+      # 4. Copy JAR to EC2
+      - name: Copy JAR to EC2
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          source: "target/*.jar"
+          target: "/home/ec2-user/"
 
-    - name: Run JAR on EC2
-      uses: appleboy/ssh-action@v0.1.10
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_KEY }}
-        script: |
-          pkill -f jar || true
-          cd /home/ec2-user
-          JAR=$(ls *.jar | head -n 1)
-          nohup java -jar $JAR > app.log 2>&1 &
+      # 5. Run JAR on EC2
+      - name: Run JAR on EC2
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            echo "Stopping old app..."
+            pkill -f jar || true
+
+            echo "Going to app directory..."
+            cd /home/ec2-user
+
+            echo "Listing files..."
+            ls -l
+
+            echo "Finding latest JAR..."
+            JAR=$(ls *.jar | head -n 1)
+
+            echo "Starting app..."
+            nohup java -jar $JAR > app.log 2>&1 &
+
+            echo "Done!"
