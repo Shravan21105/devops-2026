@@ -52,30 +52,43 @@ jobs:
         key: ${{ secrets.EC2_KEY }}
         script: |
           set -e
-
-          # Navigate to directory where JAR is uploaded
+        
           cd /home/ec2-user/target
-
-          # Stop any existing running instance of the application
+        
+          # Stop old app
           pkill -f devops-0.0.1-SNAPSHOT.jar || true
-
-          # Display files to confirm JAR presence
-          echo "Listing files in target directory:"
+          sleep 2
+        
+          # Check files
+          echo "Files:"
           ls -lt
-
-          # Start the application in background using nohup
-          echo "Starting Spring Boot application..."
+        
+          # Start app
+          echo "Starting app..."
           nohup java -jar devops-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
-
-          # Wait for application to initialize
-          sleep 10
-
-          # Verify that the application process is running
-          echo "Verifying running process:"
+        
+          # Wait + retry health check
+          echo "Waiting for app to be ready..."
+        
+          for i in {1..30}
+          do
+            if curl -sf http://localhost:8080 > /dev/null; then
+              echo "✅ App is UP"
+              break
+            fi
+            echo "Retry $i..."
+            sleep 1
+          done
+        
+          # Final check
+          if ! curl -sf http://localhost:8080 > /dev/null; then
+            echo "❌ App failed to start"
+            echo "Logs:"
+            cat app.log
+            exit 1
+          fi
+        
+          # Verify process
           ps -ef | grep java | grep -v grep
-
-          # Perform a health check on the application
-          echo "Performing health check..."
-          curl -f http://localhost:8080 || exit 1
-
-          echo "Deployment completed successfully."
+        
+          echo "🚀 Deployment Success"
