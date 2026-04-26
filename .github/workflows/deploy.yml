@@ -1,4 +1,4 @@
-name: Java CI/CD Pipeline
+name: Docker CI/CD Pipeline
 
 on:
   push:
@@ -11,83 +11,55 @@ jobs:
 
     steps:
 
-    # Step 1: Checkout source code from GitHub repository
+    # 1. Checkout code
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    # Step 2: Setup Java environment (JDK 21)
-    - name: Setup Java
-      uses: actions/setup-java@v3
+    # 2. Configure AWS credentials (for ECR access)
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
       with:
-        distribution: 'temurin'
-        java-version: '21'
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-south-1
 
-    # Step 3: Build the application using Maven Wrapper
-    - name: Build Application (Generate JAR)
-      run: ./mvnw clean package
+    # 3. Login to Amazon ECR
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
 
-    # Step 4: Archive the generated artifact (JAR file)
-    - name: Archive Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: devops-jar
-        path: target/devops-0.0.1-SNAPSHOT.jar
+    # 4. Build Docker image
+    - name: Build Docker Image
+      run: docker build -t devops-app .
 
-    # Step 5: Transfer the JAR file to EC2 instance via SCP (SSH)
-    - name: Upload JAR to EC2
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_KEY }}
-        source: "target/devops-0.0.1-SNAPSHOT.jar"
-        target: "/home/ec2-user/target/"
+    # 5. Tag Docker image
+    - name: Tag Docker Image
+      run: docker tag devops-app:latest 816975732391.dkr.ecr.ap-south-1.amazonaws.com/devops-app:latest
 
-    # Step 6: Connect to EC2 via SSH and start the application
-    - name: Deploy and Run Application on EC2
+    # 6. Push image to ECR
+    - name: Push to ECR
+      run: docker push 816975732391.dkr.ecr.ap-south-1.amazonaws.com/devops-app:latest
+
+    # 7. Deploy to EC2
+    - name: Deploy on EC2
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_KEY }}
         script: |
-          set -e
+          echo "Stopping old container..."
+          sudo docker stop devops-app || true
+          sudo docker rm devops-app || true
 
-          echo "Navigating to deployment directory..."
-          cd /home/ec2-user/target
+          echo "Logging into ECR..."
+          aws ecr get-login-password --region ap-south-1 \
+          | sudo docker login --username AWS --password-stdin 816975732391.dkr.ecr.ap-south-1.amazonaws.com
 
-          echo "Stopping existing application (if any)..."
-          pkill -f devops-0.0.1-SNAPSHOT.jar || true
-          sleep 3
+          echo "Pulling latest image..."
+          sudo docker pull 816975732391.dkr.ecr.ap-south-1.amazonaws.com/devops-app:latest
 
-          echo "Verifying uploaded JAR..."
-          ls -lt
+          echo "Running container..."
+          sudo docker run -d -p 8080:8080 --name devops-app \
+          816975732391.dkr.ecr.ap-south-1.amazonaws.com/devops-app:latest
 
-          echo "Starting Spring Boot application..."
-          nohup java -jar devops-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
-
-          echo "Waiting for application to initialize..."
-
-          # Retry health check (max 30 seconds)
-          for i in {1..30}
-          do
-            if curl -sf http://localhost:8080 > /dev/null; then
-              echo "Application is up and running"
-              break
-            fi
-            echo "Attempt $i: Application not ready yet..."
-            sleep 1
-          done
-
-          # Final validation
-          if ! curl -sf http://localhost:8080 > /dev/null; then
-            echo "Deployment failed. Application did not start."
-            echo "Application logs:"
-            cat app.log
-            exit 1
-          fi
-
-          echo "Checking running process..."
-          ps -ef | grep java | grep -v grep
-
-          echo "Deployment completed successfully."
+          echo "Deployment successful!"
