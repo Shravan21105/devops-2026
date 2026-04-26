@@ -52,43 +52,42 @@ jobs:
         key: ${{ secrets.EC2_KEY }}
         script: |
           set -e
-        
+
+          echo "Navigating to deployment directory..."
           cd /home/ec2-user/target
-        
-          # Stop old app
+
+          echo "Stopping existing application (if any)..."
           pkill -f devops-0.0.1-SNAPSHOT.jar || true
-          sleep 2
-        
-          # Check files
-          echo "Files:"
+          sleep 3
+
+          echo "Verifying uploaded JAR..."
           ls -lt
-        
-          # Start app
-          echo "Starting app..."
+
+          echo "Starting Spring Boot application..."
           nohup java -jar devops-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
-        
-          # Wait + retry health check
-          echo "Waiting for app to be ready..."
-        
+
+          echo "Waiting for application to initialize..."
+
+          # Retry health check (max 30 seconds)
           for i in {1..30}
           do
             if curl -sf http://localhost:8080 > /dev/null; then
-              echo "✅ App is UP"
+              echo "Application is up and running"
               break
             fi
-            echo "Retry $i..."
+            echo "Attempt $i: Application not ready yet..."
             sleep 1
           done
-        
-          # Final check
+
+          # Final validation
           if ! curl -sf http://localhost:8080 > /dev/null; then
-            echo "❌ App failed to start"
-            echo "Logs:"
+            echo "Deployment failed. Application did not start."
+            echo "Application logs:"
             cat app.log
             exit 1
           fi
-        
-          # Verify process
+
+          echo "Checking running process..."
           ps -ef | grep java | grep -v grep
-        
-          echo "🚀 Deployment Success"
+
+          echo "Deployment completed successfully."
